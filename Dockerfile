@@ -14,26 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifest first for layer caching
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir \
-    "google-adk>=0.1.0" \
-    "google-genai>=1.0.0" \
-    "mcp>=1.0.0" \
-    "fastmcp>=2.13.0" \
-    "fastapi>=0.110.0" \
-    "uvicorn[standard]>=0.29.0" \
-    "pydantic>=2.0.0" \
-    "pydantic-settings>=2.0.0" \
-    "google-cloud-aiplatform>=1.38.0" \
-    "google-cloud-logging>=3.0.0" \
-    "google-cloud-storage>=3.6.0" \
-    "google-cloud-secret-manager>=2.26.0" \
-    "google-cloud-firestore>=2.16.0" \
-    "python-dotenv>=1.0.0" \
-    "tenacity>=8.0.0" \
-    "structlog>=23.0.0"
+# Install Python dependencies from pinned lockfile
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY src/ ./src/
