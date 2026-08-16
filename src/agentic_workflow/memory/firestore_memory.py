@@ -168,7 +168,10 @@ class FirestoreMemory(IMemory):
                 data = doc.to_dict()
                 messages_data = data.get("messages", [])
                 all_messages.extend(
-                    Message(role=MessageRole(m["role"]), **{k: v for k, v in m.items() if k != "role"})
+                    Message(
+                        role=MessageRole(m["role"]),
+                        **{k: v for k, v in m.items() if k != "role"},
+                    )
                     for m in messages_data
                 )
 
