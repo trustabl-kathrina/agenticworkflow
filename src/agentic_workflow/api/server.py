@@ -83,19 +83,16 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce API key authentication."""
 
-    def __init__(self, app: Any, api_key: str | None = None) -> None:
-        super().__init__(app)
-        self.api_key = api_key
-
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         if request.url.path == "/health":
             return await call_next(request)
 
-        if not self.api_key:
+        api_key = os.getenv("API_KEY")
+        if not api_key:
             return await call_next(request)
 
         client_key = request.headers.get("X-API-Key")
-        if not client_key or client_key != self.api_key:
+        if not client_key or client_key != api_key:
             logger.warning(
                 "unauthorized_request",
                 path=request.url.path,
