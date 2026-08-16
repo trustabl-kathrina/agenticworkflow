@@ -12,21 +12,6 @@ Extensible AI agent platform on Google Cloud. Framework-agnostic core with plugg
 - gcloud CLI authenticated (`gcloud auth login`)
 - Active GCP project with billing enabled
 
-### Local Development
-
-```bash
-# Install dependencies
-make install
-
-# Run server locally
-make local
-
-# Run tests
-make test
-
-# Lint and typecheck
-make check
-```
 
 ### Production Deployment
 
@@ -35,9 +20,9 @@ make check
 Edit `.env` with your GCP project and billing details:
 
 ```bash
-GOOGLE_CLOUD_PROJECT=agenticworkflow-505710
+GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=europe-west3
-BILLING_ACCOUNT_ID=01341C-1027CC-FC941B
+BILLING_ACCOUNT_ID=your-billing-account-id
 BUDGET_AMOUNT=10
 API_KEY=your-secret-api-key
 ```
@@ -52,7 +37,7 @@ Some APIs must be enabled before Terraform can manage them:
 gcloud services enable cloudresourcemanager.googleapis.com \
   secretmanager.googleapis.com \
   compute.googleapis.com \
-  --project=agenticworkflow-505710
+  --project=your-project-id
 ```
 
 **Why?** Terraform's `google_project_service` resource is eventually consistent. The provider may attempt to read/write other services before GCP has finished propagating the enablement, causing `SERVICE_DISABLED` errors.
@@ -62,7 +47,7 @@ gcloud services enable cloudresourcemanager.googleapis.com \
 The Budgets API requires a quota project when using local ADC:
 
 ```bash
-export GOOGLE_CLOUD_QUOTA_PROJECT=agenticworkflow-505710
+export GOOGLE_CLOUD_QUOTA_PROJECT=your-project-id
 ```
 
 Or set it in your shell profile. Terraform providers are configured with `user_project_override = true` to use this automatically.
@@ -78,8 +63,8 @@ This runs `scripts/sync_terraform.py` then `terraform init` with the GCS backend
 **Note:** The GCS backend bucket must exist first:
 
 ```bash
-gsutil mb gs://agenticworkflow-505710-terraform-state || true
-gsutil versioning set on gs://agenticworkflow-505710-terraform-state
+gsutil mb gs://your-project-id-terraform-state || true
+gsutil versioning set on gs://your-project-id-terraform-state
 ```
 
 #### 5. Plan Infrastructure
@@ -108,9 +93,9 @@ Or manually:
 
 ```bash
 gcloud builds submit \
-  --project agenticworkflow-505710 \
+  --project your-project-id \
   --region europe-west3 \
-  --tag europe-west3-docker.pkg.dev/agenticworkflow-505710/prod-agentic-workflow/agent:latest
+  --tag europe-west3-docker.pkg.dev/your-project-id/prod-agentic-workflow/agent:latest
 ```
 
 #### 8. Provision API Key Secret
@@ -119,7 +104,7 @@ Terraform creates the `api-key` secret, but you must add the value:
 
 ```bash
 echo -n "your-secret-api-key" | gcloud secrets versions add api-key \
-  --project=agenticworkflow-505710 \
+  --project=your-project-id \
   --data-file=-
 ```
 
@@ -136,40 +121,108 @@ curl http://<LOAD_BALANCER_IP>/health
 curl -H "X-API-Key: your-secret-api-key" http://<LOAD_BALANCER_IP>/health
 ```
 
-### Known Issues and Resolutions
+### Calling the Service
 
-| Issue | Resolution |
-|-------|-----------|
-| `Secret Manager API has not been used` | Enable `secretmanager.googleapis.com` manually before `terraform apply` |
-| `Compute Engine API has not been used` | Enable `compute.googleapis.com` manually before `terraform apply` |
-| `Cloud Resource Manager API has not been used` | Enable `cloudresourcemanager.googleapis.com` manually before `terraform apply` |
-| `billingbudgets.googleapis.com requires quota project` | Set `GOOGLE_CLOUD_QUOTA_PROJECT` env var |
-| `Image not found` on Cloud Run | Build and push Docker image before `terraform apply`, or deploy image after |
-| `COPY` Docker build failure | Ensure `COPY` with multiple sources ends with `/` |
+All endpoints are served through the load balancer at `http://<LOAD_BALANCER_IP>`. Authenticated endpoints require the `X-API-Key` header.
 
-### Latest Updates
+#### Prerequisites
 
-- **Firestore Memory**: Fixed `MessageRole` serialization/deserialization to prevent `AttributeError` on session save/load
-- **ADK Integration**: Fixed session creation (`await` + `create_session`), switched to `get_function_calls()` API for tool call parsing
-- **Server**: Migrated app state from globals to `app.state`, added `__main__` block for direct uvicorn execution
-- **Docker**: Fixed `COPY` multi-source syntax, added healthcheck
-- **Infrastructure**: Added `depends_on` for API enablement, `user_project_override` for Budgets API, Cloud Armor rate limiting
+```bash
+# Set the correct GCP project
+gcloud config set project your-project-id
 
-### Architecture
+# Get the load balancer IP
+export LB_IP=$(terraform output -raw load_balancer_url | sed 's|http://||')
 
-- **Agent Framework**: ADK (pluggable via `IAgent` interface)
-- **Tools**: MCP-based, pluggable via `/tools/register`
-- **Memory**: Firestore-backed
-- **Auth**: API key via Secret Manager + Cloud Armor rate limiting
-- **Budget**: 10 EUR/month hard cap with GCP Budgets
-- **Monitoring**: 5 alert policies (errors, latency, burn rate, cold starts, instance count)
-- **Region**: `europe-west3`
+# Get the API key from Secret Manager
+export API_KEY=$(gcloud secrets versions access latest --secret=api-key --project=your-project-id)
+```
 
-### CI/CD
+#### Health Check
 
-GitHub Actions runs on push to `main`:
-1. Lint and typecheck
-2. Unit tests
-3. Build Docker image
-4. Integration tests
+```bash
+curl http://$LB_IP/health
+```
+
+Response:
+```json
+{"status":"healthy"}
+```
+
+#### Chat
+
+Send a message and receive a response:
+
+```bash
+curl -X POST http://$LB_IP/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{"message": "Hello, how are you?"}'
+```
+
+Response:
+```json
+{
+  "message": "Hello! How can I help you today?",
+  "session_id": "default",
+  "tool_calls": [],
+  "finish_reason": "stop",
+  "usage": {"prompt_tokens": 23, "completion_tokens": 9}
+}
+```
+
+#### Streaming Chat
+
+Stream responses in real time:
+
+```bash
+curl -X POST http://$LB_IP/chat/stream \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{"message": "Tell me a story"}'
+```
+
+#### List Tools
+
+```bash
+curl http://$LB_IP/tools \
+  -H "X-API-Key: $API_KEY"
+```
+
+Response:
+```json
+["tool_name_1", "tool_name_2"]
+```
+
+#### Register Tool
+
+```bash
+curl -X POST http://$LB_IP/tools/register \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{
+    "name": "my_tool",
+    "description": "My custom tool",
+    "parameters": {"type": "object", "properties": {...}},
+    "function": "base64_encoded_python_function"
+  }'
+```
+
+#### Invoke Tool
+
+```bash
+curl -X POST http://$LB_IP/tools/my_tool/invoke \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $API_KEY" \
+  -d '{"arg1": "value1", "arg2": "value2"}'
+```
+
+#### Delete Session
+
+```bash
+curl -X DELETE http://$LB_IP/sessions/default \
+  -H "X-API-Key: $API_KEY"
+```
+
+
 
