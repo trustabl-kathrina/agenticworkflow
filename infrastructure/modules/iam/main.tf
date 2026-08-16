@@ -16,12 +16,6 @@ resource "google_project_iam_member" "agent_logging" {
   member  = "serviceAccount:${google_service_account.agent_sa.email}"
 }
 
-resource "google_project_iam_member" "agent_storage" {
-  project = var.project_id
-  role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.agent_sa.email}"
-}
-
 resource "google_project_iam_member" "agent_secrets" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
