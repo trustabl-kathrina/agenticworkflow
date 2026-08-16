@@ -91,11 +91,3 @@ resource "google_cloud_run_v2_service" "agent" {
 
   depends_on = [var.apis_module]
 }
-
-resource "google_cloud_run_v2_service_iam_member" "agent_invoker" {
-  project  = var.project_id
-  location = var.region
-  name     = var.agent_service_name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
