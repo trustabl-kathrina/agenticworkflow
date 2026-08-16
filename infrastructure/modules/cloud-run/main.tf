@@ -1,3 +1,11 @@
+resource "google_vpc_access_connector" "agent_connector" {
+  count   = var.vpc_connector_name != "" ? 1 : 0
+  project = var.project_id
+  name    = var.vpc_connector_name
+  region  = var.vpc_connector_region != "" ? var.vpc_connector_region : var.region
+  ip_cidr_range = var.vpc_connector_ip_cidr_range
+}
+
 resource "google_cloud_run_v2_service" "agent" {
   project  = var.project_id
   name     = var.agent_service_name
@@ -68,6 +76,14 @@ resource "google_cloud_run_v2_service" "agent" {
         }
         period_seconds    = 30
         failure_threshold = 3
+      }
+    }
+
+    dynamic "vpc_access" {
+      for_each = var.vpc_connector_name != "" ? [1] : []
+      content {
+        connector = google_vpc_access_connector.agent_connector[0].id
+        egress    = var.vpc_egress_all_egress ? "ALL_TRAFFIC" : "PRIVATE_RANGES_ONLY"
       }
     }
   }

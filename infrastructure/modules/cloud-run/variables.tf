@@ -54,3 +54,27 @@ variable "allowed_ingress" {
   type        = string
   default     = "INGRESS_INTERNAL_LOAD_BALANCER"
 }
+
+variable "vpc_connector_name" {
+  description = "VPC connector name for private egress (leave empty to disable)"
+  type        = string
+  default     = ""
+}
+
+variable "vpc_connector_region" {
+  description = "Region for the VPC connector"
+  type        = string
+  default     = ""
+}
+
+variable "vpc_connector_ip_cidr_range" {
+  description = "IP CIDR range for VPC connector (e.g., 10.8.0.0/28)"
+  type        = string
+  default     = "10.8.0.0/28"
+}
+
+variable "vpc_egress_all_egress" {
+  description = "Send all egress through VPC connector"
+  type        = bool
+  default     = true
+}
