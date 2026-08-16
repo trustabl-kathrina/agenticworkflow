@@ -6,7 +6,7 @@
 PROJECT_DIR := $(shell pwd)
 SRC_DIR := $(PROJECT_DIR)/src
 INFRA_DIR := $(PROJECT_DIR)/infrastructure
-ENV := dev
+ENV := prod
 REGION := us-central1
 PROJECT_ID := $(shell gcloud config get-value project 2>/dev/null || echo "your-project-id")
 
@@ -63,9 +63,9 @@ deploy: ## Deploy to Cloud Run via Cloud Build
 	gcloud builds submit \
 		--project $(PROJECT_ID) \
 		--region $(REGION) \
-		--tag $(REGION)-docker.pkg.dev/$(PROJECT_ID)/dev-agentic-workflow/agent:$$(git rev-parse --short HEAD)
-	gcloud run services update-agent $(shell cd $(INFRA_DIR)/environments/$(ENV) && terraform output -raw agent_service_name 2>/dev/null || echo "agentic-workflow-dev") \
-		--image $(REGION)-docker.pkg.dev/$(PROJECT_ID)/dev-agentic-workflow/agent:$$(git rev-parse --short HEAD) \
+		--tag $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(ENV)-agentic-workflow/agent:$$(git rev-parse --short HEAD)
+	gcloud run services update-agent $(shell cd $(INFRA_DIR)/environments/$(ENV) && terraform output -raw agent_service_name 2>/dev/null || echo "agentic-workflow-$(ENV)") \
+		--image $(REGION)-docker.pkg.dev/$(PROJECT_ID)/$(ENV)-agentic-workflow/agent:$$(git rev-parse --short HEAD) \
 		--region $(REGION) \
 		--project $(PROJECT_ID)
 
