@@ -7,19 +7,41 @@ allowing swap to Redis, Vertex AI Memory Bank, or other backends.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC
-from typing import Any
+from typing import Any, TypeVar
+
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from agentic_workflow.core.interfaces import IMemory, Message
 
 try:
+    from google.api_core.exceptions import DeadlineExceeded, ServiceUnavailable
     from google.cloud.firestore import SERVER_TIMESTAMP, AsyncClient
 except ImportError:
     SERVER_TIMESTAMP = None  # type: ignore[assignment]
     AsyncClient = None  # type: ignore[assignment,misc]
+    ServiceUnavailable = Exception  # type: ignore[misc,assignment]
+    DeadlineExceeded = Exception  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _firestore_retry_decorator(func: F) -> F:  # noqa: UP047
+    """Retry decorator for Firestore operations with exponential backoff."""
+    return retry(
+        retry=retry_if_exception_type((ServiceUnavailable, DeadlineExceeded)),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        reraise=True,
+    )(func)
 
 
 class FirestoreMemory(IMemory):
@@ -59,6 +81,7 @@ class FirestoreMemory(IMemory):
     def _session_doc(self, session_id: str) -> str:
         return f"sessions/{session_id}"
 
+    @_firestore_retry_decorator
     async def get_session(self, session_id: str) -> list[Message] | None:
         """Retrieve messages for a session."""
         client = await self._get_client()
@@ -72,6 +95,7 @@ class FirestoreMemory(IMemory):
         messages_data = data.get("messages", [])
         return [Message(**m) for m in messages_data]
 
+    @_firestore_retry_decorator
     async def save_session(
         self,
         session_id: str,
@@ -110,12 +134,14 @@ class FirestoreMemory(IMemory):
         await doc_ref.set(doc_data, merge=True)
         logger.debug(f"Saved session {session_id} with {len(messages_data)} messages")
 
+    @_firestore_retry_decorator
     async def delete_session(self, session_id: str) -> None:
         """Delete a session."""
         client = await self._get_client()
         doc_ref = client.document(self._session_doc(session_id))
         await doc_ref.delete()
 
+    @_firestore_retry_decorator
     async def search(
         self, query: str, limit: int = 10, session_id: str | None = None
     ) -> list[Message]:
