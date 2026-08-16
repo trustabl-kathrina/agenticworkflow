@@ -4,6 +4,7 @@ resource "google_secret_manager_secret" "api_keys" {
     "reddit-client-id",
     "reddit-client-secret",
     "developer-knowledge-key",
+    "api-key",
   ])
 
   project   = var.project_id

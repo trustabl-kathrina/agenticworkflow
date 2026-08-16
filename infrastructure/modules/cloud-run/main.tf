@@ -53,6 +53,16 @@ resource "google_cloud_run_v2_service" "agent" {
         }
       }
 
+      env {
+        name = "API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.api_keys["api-key"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
       startup_probe {
         http_get {
           path = "/health"
