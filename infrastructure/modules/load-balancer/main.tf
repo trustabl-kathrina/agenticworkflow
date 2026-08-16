@@ -26,6 +26,33 @@ resource "google_compute_url_map" "agent_url_map" {
   default_service = google_compute_backend_service.agent_backend.id
 }
 
+resource "google_compute_managed_ssl_certificate" "agent_ssl" {
+  count   = var.domain != "" ? 1 : 0
+  project = var.project_id
+  name    = "${var.environment}-agent-ssl-cert"
+
+  managed {
+    domains = [var.domain]
+  }
+}
+
+resource "google_compute_target_https_proxy" "agent_https_proxy" {
+  count           = var.domain != "" ? 1 : 0
+  project         = var.project_id
+  name            = "${var.environment}-agent-https-proxy"
+  url_map         = google_compute_url_map.agent_url_map.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.agent_ssl[0].id]
+}
+
+resource "google_compute_global_forwarding_rule" "agent_https_forwarding" {
+  count        = var.domain != "" ? 1 : 0
+  project      = var.project_id
+  name         = "${var.environment}-agent-https-forwarding"
+  target       = google_compute_target_https_proxy.agent_https_proxy[0].id
+  port_range   = "443"
+  ip_address  = google_compute_global_address.agent_lb_ip.address
+}
+
 resource "google_compute_target_http_proxy" "agent_proxy" {
   project    = var.project_id
   name       = "${var.environment}-agent-proxy"

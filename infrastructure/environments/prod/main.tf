@@ -15,6 +15,11 @@ terraform {
       version = "~> 3.5"
     }
   }
+
+  backend "gcs" {
+    bucket = "agenticworkflow-505710-terraform-state"
+    prefix = "prod/terraform.tfstate"
+  }
 }
 
 provider "google" {
@@ -87,13 +92,24 @@ variable "max_instances" {
 variable "budget_amount" {
   description = "Monthly budget cap in EUR"
   type        = number
-  default     = 10
 }
 
 variable "allowed_ingress" {
   description = "Allowed ingress for Cloud Run"
   type        = string
   default     = "INGRESS_INTERNAL_LOAD_BALANCER"
+}
+
+variable "domain" {
+  description = "Domain name for HTTPS load balancer and SSL certificate"
+  type        = string
+  default     = ""
+}
+
+variable "alert_email" {
+  description = "Email address for monitoring alerts"
+  type        = string
+  default     = ""
 }
 
 module "apis" {
@@ -145,11 +161,12 @@ module "cloud_run" {
 }
 
 module "load_balancer" {
-  source                = "../../modules/load-balancer"
-  project_id            = var.project_id
-  region                = var.region
-  environment           = var.environment
+  source                 = "../../modules/load-balancer"
+  project_id             = var.project_id
+  region                 = var.region
+  environment            = var.environment
   cloud_run_service_name = module.cloud_run.agent_service_name
+  domain                 = var.domain
 }
 
 module "budget" {
@@ -161,10 +178,11 @@ module "budget" {
 }
 
 module "monitoring" {
-  source      = "../../modules/monitoring"
-  project_id  = var.project_id
-  region      = var.region
-  environment = var.environment
+  source          = "../../modules/monitoring"
+  project_id      = var.project_id
+  region          = var.region
+  environment     = var.environment
+  alert_email     = var.alert_email
 }
 
 output "agent_url" {
