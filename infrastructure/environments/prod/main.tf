@@ -35,7 +35,7 @@ variable "project_id" {
 variable "region" {
   description = "Default GCP region"
   type        = string
-  default     = "us-central1"
+  default     = "europe-west3"
 }
 
 variable "environment" {
@@ -75,7 +75,7 @@ variable "agent_memory" {
 variable "min_instances" {
   description = "Minimum Cloud Run instances (0 for scale-to-zero)"
   type        = number
-  default     = 1
+  default     = 0
 }
 
 variable "max_instances" {
@@ -93,7 +93,7 @@ variable "budget_amount" {
 variable "allowed_ingress" {
   description = "Allowed ingress for Cloud Run"
   type        = string
-  default     = "INGRESS_TRAFFIC_ALL"
+  default     = "INGRESS_INTERNAL_LOAD_BALANCER"
 }
 
 module "apis" {
@@ -144,6 +144,14 @@ module "cloud_run" {
   allowed_ingress    = var.allowed_ingress
 }
 
+module "load_balancer" {
+  source                = "../../modules/load-balancer"
+  project_id            = var.project_id
+  region                = var.region
+  environment           = var.environment
+  cloud_run_service_name = module.cloud_run.agent_service_name
+}
+
 module "budget" {
   source            = "../../modules/budget"
   project_id        = var.project_id
@@ -162,6 +170,16 @@ module "monitoring" {
 output "agent_url" {
   description = "URL of the deployed agent Cloud Run service"
   value       = module.cloud_run.agent_url
+}
+
+output "agent_service_name" {
+  description = "Cloud Run service name"
+  value       = module.cloud_run.agent_service_name
+}
+
+output "load_balancer_url" {
+  description = "External load balancer URL (use this to access the service)"
+  value       = module.load_balancer.load_balancer_url
 }
 
 output "agent_service_account" {
