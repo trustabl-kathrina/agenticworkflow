@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from agentic_workflow.core.interfaces import (
     AgentResponse,
     IAgent,
@@ -14,7 +16,8 @@ from agentic_workflow.core.interfaces import (
 class TestFrameworkSwap:
     """Test that the framework-agnostic interface works."""
 
-    def test_agent_interface_contract(self):
+    @pytest.mark.asyncio
+    async def test_agent_interface_contract(self):
         class MinimalAgent(IAgent):
             async def invoke(self, messages, config=None):
                 return AgentResponse(message="minimal")
@@ -27,6 +30,9 @@ class TestFrameworkSwap:
 
             def list_tools(self) -> list[str]:
                 return []
+
+            async def close(self) -> None:
+                pass
 
         agent = MinimalAgent()
         assert agent.list_tools() == []

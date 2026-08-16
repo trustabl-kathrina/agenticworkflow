@@ -12,8 +12,10 @@ resource "google_secret_manager_secret" "api_keys" {
   }
 
   replication {
-    automatic = true
+    user_managed {
+      replicas {
+        location = var.region
+      }
+    }
   }
-
-  depends_on = [google_project_service.api["secretmanager.googleapis.com"]]
 }

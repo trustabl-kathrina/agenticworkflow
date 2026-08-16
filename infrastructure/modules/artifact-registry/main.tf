@@ -4,6 +4,4 @@ resource "google_artifact_registry_repository" "agent_repo" {
   repository_id = "${var.environment}-agentic-workflow"
   description   = "Container images for ${var.environment} agentic workflow"
   format        = "DOCKER"
-
-  depends_on = [google_project_service.api["artifactregistry.googleapis.com"]]
 }

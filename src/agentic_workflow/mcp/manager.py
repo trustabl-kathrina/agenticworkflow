@@ -42,7 +42,7 @@ class MCPToolManager:
                     RemoteMCPTool(
                         name=tool.name,
                         description=tool.description or "",
-                        input_schema=getattr(tool, "inputSchema", {}),
+                    input_schema=tool.parameters,
                         client=client,
                     )
                     for tool in tools
@@ -62,15 +62,21 @@ class MCPToolManager:
             List of discovered tools.
         """
         try:
+            import importlib
+
             from fastmcp import FastMCP
 
-            server = FastMCP(module_path)
+            try:
+                module = importlib.import_module(module_path)
+                server = module.mcp
+            except (ImportError, AttributeError):
+                server = FastMCP(module_path)
             tools = await server.list_tools()
             return [
                 LocalMCPTool(
                     name=tool.name,
                     description=tool.description or "",
-                    input_schema=getattr(tool, "inputSchema", {}),
+                    input_schema=tool.parameters,
                     server=server,
                 )
                 for tool in tools

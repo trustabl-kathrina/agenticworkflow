@@ -4,6 +4,7 @@ resource "google_vpc_access_connector" "agent_connector" {
   name    = var.vpc_connector_name
   region  = var.vpc_connector_region != "" ? var.vpc_connector_region : var.region
   ip_cidr_range = var.vpc_connector_ip_cidr_range
+  network = var.vpc_connector_network != "" ? var.vpc_connector_network : null
 }
 
 resource "google_cloud_run_v2_service" "agent" {
@@ -13,7 +14,7 @@ resource "google_cloud_run_v2_service" "agent" {
   ingress  = var.allowed_ingress
 
   template {
-    service_account = google_service_account.agent_sa.email
+    service_account = var.agent_service_account_email
 
     scaling {
       min_instance_count = var.min_instances
@@ -55,7 +56,7 @@ resource "google_cloud_run_v2_service" "agent" {
         name = "API_KEY"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.api_keys["api-key"].secret_id
+            secret  = var.api_key_secret_id
             version = "latest"
           }
         }
@@ -88,5 +89,13 @@ resource "google_cloud_run_v2_service" "agent" {
     }
   }
 
-  depends_on = [google_project_service.api["run.googleapis.com"]]
+  depends_on = [var.apis_module]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "agent_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = var.agent_service_name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }

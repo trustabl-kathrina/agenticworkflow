@@ -73,8 +73,31 @@ variable "vpc_connector_ip_cidr_range" {
   default     = "10.8.0.0/28"
 }
 
+variable "vpc_connector_network" {
+  description = "VPC network name for the connector (required if vpc_connector_name is set)"
+  type        = string
+  default     = ""
+}
+
 variable "vpc_egress_all_egress" {
   description = "Send all egress through VPC connector"
   type        = bool
   default     = true
+}
+
+variable "api_key_secret_id" {
+  description = "Secret Manager secret ID for API key"
+  type        = string
+  default     = "api-key"
+}
+
+variable "apis_module" {
+  description = "APIs module output for dependency management"
+  type        = any
+  default     = null
+}
+
+variable "agent_service_account_email" {
+  description = "Service account email for the agent"
+  type        = string
 }

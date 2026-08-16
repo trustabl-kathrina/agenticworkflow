@@ -9,6 +9,7 @@ locals {
     "cloudbuild.googleapis.com",
     "firestore.googleapis.com",
     "pubsub.googleapis.com",
+    "compute.googleapis.com",
   ]
 }
 

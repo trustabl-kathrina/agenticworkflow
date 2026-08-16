@@ -18,7 +18,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from agentic_workflow.core.interfaces import IMemory, Message
+from agentic_workflow.core.interfaces import IMemory, Message, MessageRole
 
 try:
     from google.api_core.exceptions import DeadlineExceeded, ServiceUnavailable
@@ -93,7 +93,10 @@ class FirestoreMemory(IMemory):
 
         data = doc.to_dict()
         messages_data = data.get("messages", [])
-        return [Message(**m) for m in messages_data]
+        return [
+            Message(role=MessageRole(m["role"]), **{k: v for k, v in m.items() if k != "role"})
+            for m in messages_data
+        ]
 
     @_firestore_retry_decorator
     async def save_session(
@@ -108,7 +111,7 @@ class FirestoreMemory(IMemory):
 
         messages_data = [
             {
-                "role": m.role.value,
+                "role": str(m.role),
                 "content": m.content,
                 "metadata": m.metadata,
                 "tool_calls": [tc.__dict__ for tc in m.tool_calls],
@@ -123,7 +126,7 @@ class FirestoreMemory(IMemory):
             "updated_at": SERVER_TIMESTAMP,
         }
 
-        effective_ttl = ttl or self.session_ttl
+        effective_ttl = ttl if ttl is not None else self.session_ttl
         if effective_ttl:
             from datetime import datetime, timedelta
 
@@ -155,13 +158,19 @@ class FirestoreMemory(IMemory):
                 return []
             data = doc.to_dict()
             messages_data = data.get("messages", [])
-            all_messages = [Message(**m) for m in messages_data]
+            all_messages = [
+                Message(role=MessageRole(m["role"]), **{k: v for k, v in m.items() if k != "role"})
+                for m in messages_data
+            ]
         else:
             all_messages = []
             async for doc in collection.stream():
                 data = doc.to_dict()
                 messages_data = data.get("messages", [])
-                all_messages.extend(Message(**m) for m in messages_data)
+                all_messages.extend(
+                    Message(role=MessageRole(m["role"]), **{k: v for k, v in m.items() if k != "role"})
+                    for m in messages_data
+                )
 
         query_lower = query.lower()
         scored = []

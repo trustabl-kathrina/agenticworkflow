@@ -1,10 +1,16 @@
+locals {
+  neg_self_link = "projects/${var.project_id}/regions/${var.region}/networkEndpointGroups/${var.environment}-agent-neg"
+}
+
 resource "google_compute_region_network_endpoint_group" "cloud_run_neg" {
-  project                  = var.project_id
-  name                     = "${var.environment}-agent-neg"
-  region                   = var.region
-  network_endpoint_type    = "SERVERLESS"
-  cloud_run_service        = var.cloud_run_service_name
-  cloud_run_tag            = ""
+  project               = var.project_id
+  name                  = "${var.environment}-agent-neg"
+  region                = var.region
+  network_endpoint_type = "SERVERLESS"
+
+  cloud_run {
+    service = var.cloud_run_service_name
+  }
 }
 
 resource "google_compute_backend_service" "agent_backend" {
@@ -77,7 +83,6 @@ resource "google_compute_security_policy" "cloud_armor" {
   project = var.project_id
   name    = "${var.environment}-agent-cloud-armor"
 
-  # Rate limiting: 100 requests per minute per IP
   rule {
     action   = "rate_based_ban"
     priority = "100"
@@ -92,18 +97,21 @@ resource "google_compute_security_policy" "cloud_armor" {
       ban_duration_sec = 600
     }
     match {
-      versioned_expr = "CEL_V1"
-      expression     = "true"
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
     }
   }
 
-  # Default rule: allow
   rule {
     action   = "allow"
-    priority = "65535"
+    priority = "2147483647"
     match {
-      versioned_expr = "CEL_V1"
-      expression     = "true"
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
     }
   }
 }

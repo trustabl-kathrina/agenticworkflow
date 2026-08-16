@@ -60,10 +60,13 @@ class ADKAgent(IAgent):
             for tool_name in self.config.tools:
                 tool = self._registry.get(tool_name)
                 if tool:
-                    tools.append(self._wrap_tool(tool))
+                    wrapped = self._wrap_tool(tool)
+                    if wrapped is not None:
+                        tools.append(wrapped)
 
+            agent_name = self.config.name.replace("-", "_")
             self._agent = Agent(
-                name=self.config.name,
+                name=agent_name,
                 model=self.config.model,
                 instruction=self.config.system_prompt or "You are a helpful assistant.",
                 tools=tools,
@@ -72,7 +75,7 @@ class ADKAgent(IAgent):
             session_service = InMemorySessionService()
             self._runner = Runner(
                 agent=self._agent,
-                app_name=self.config.name,
+                app_name=agent_name,
                 session_service=session_service,
             )
             self._initialized = True
@@ -115,6 +118,15 @@ class ADKAgent(IAgent):
         session_id = effective_config.metadata.get("session_id", "default")
         user_id = effective_config.metadata.get("user_id", "user")
 
+        try:
+            await self._runner.session_service.create_session(
+                app_name=self._agent.name,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except Exception:
+            pass
+
         last_message = messages[-1] if messages else None
         if not last_message:
             return AgentResponse(message="No input provided.")
@@ -128,42 +140,43 @@ class ADKAgent(IAgent):
             )
 
             events = []
-            async with asyncio.timeout(ADKAgent.INVOKE_TIMEOUT_SECONDS):
+            async def _collect() -> list[Any]:
+                result = []
                 async for event in self._runner.run_async(
                     user_id=user_id,
                     session_id=session_id,
                     new_message=content,
                 ):
-                    events.append(event)
+                    result.append(event)
+                return result
+
+            events = await asyncio.wait_for(_collect(), timeout=ADKAgent.INVOKE_TIMEOUT_SECONDS)
 
             response_text = ""
             tool_calls = []
             usage = {}
 
             for event in events:
-                if hasattr(event, "content") and event.content:
+                if event.content:
                     for part in event.content.parts:
-                        if hasattr(part, "text") and part.text:
+                        if part.text:
                             response_text += part.text
 
-                if hasattr(event, "tool_calls"):
-                    for tc in event.tool_calls:
+                function_calls = event.get_function_calls()
+                if function_calls:
+                    for fc in function_calls:
                         tool_calls.append(
                             ToolCall(
-                                id=getattr(tc, "id", ""),
-                                name=getattr(tc, "name", ""),
-                                arguments=getattr(tc, "args", {}),
+                                id=fc.id,
+                                name=fc.name,
+                                arguments=fc.args,
                             )
                         )
 
-                if hasattr(event, "usage_metadata"):
+                if event.usage_metadata:
                     usage = {
-                        "prompt_tokens": getattr(
-                            event.usage_metadata, "prompt_token_count", 0
-                        ),
-                        "completion_tokens": getattr(
-                            event.usage_metadata, "candidates_token_count", 0
-                        ),
+                        "prompt_tokens": event.usage_metadata.prompt_token_count,
+                        "completion_tokens": event.usage_metadata.candidates_token_count,
                     }
 
             return AgentResponse(
@@ -179,7 +192,7 @@ class ADKAgent(IAgent):
                 finish_reason="error",
             )
 
-    async def stream(  # type: ignore[override]
+    async def stream(
         self,
         messages: Sequence[Message],
         config: AgentConfig | None = None,
@@ -190,6 +203,15 @@ class ADKAgent(IAgent):
         effective_config = config or self.config
         session_id = effective_config.metadata.get("session_id", "default")
         user_id = effective_config.metadata.get("user_id", "user")
+
+        try:
+            await self._runner.session_service.create_session(
+                app_name=self._agent.name,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except Exception:
+            pass
 
         last_message = messages[-1] if messages else None
         if not last_message:
@@ -204,16 +226,20 @@ class ADKAgent(IAgent):
                 parts=[types.Part(text=last_message.content)],
             )
 
-            async with asyncio.timeout(ADKAgent.INVOKE_TIMEOUT_SECONDS):
+            async def _stream() -> AsyncGenerator[str, None]:
                 async for event in self._runner.run_async(
                     user_id=user_id,
                     session_id=session_id,
                     new_message=content,
                 ):
-                    if hasattr(event, "content") and event.content:
+                    if event.content:
                         for part in event.content.parts:
-                            if hasattr(part, "text") and part.text:
+                            if part.text:
                                 yield part.text
+
+            async with asyncio.timeout(ADKAgent.INVOKE_TIMEOUT_SECONDS):
+                async for chunk in _stream():
+                    yield chunk
 
         except TimeoutError:
             logger.error("Agent stream timed out")
@@ -221,6 +247,14 @@ class ADKAgent(IAgent):
         except Exception as e:
             logger.error(f"Agent stream failed: {e}", exc_info=True)
             yield f"Error: {e!s}"
+
+    async def close(self) -> None:
+        """Release ADK runner resources."""
+        if self._runner:
+            try:
+                await self._runner.close()
+            except Exception as e:
+                logger.warning(f"Error closing agent runner: {e}")
 
     def register_tool(self, tool: ITool) -> None:
         """Register a tool with the agent."""

@@ -18,7 +18,7 @@ class TestMCPManagerIntegration:
         mock_tool = MagicMock()
         mock_tool.name = "remote_test_tool"
         mock_tool.description = "A test tool"
-        mock_tool.inputSchema = {"type": "object", "properties": {"arg": {"type": "string"}}}
+        mock_tool.parameters = {"type": "object", "properties": {"arg": {"type": "string"}}}
 
         mock_client = AsyncMock()
         mock_client.list_tools = AsyncMock(return_value=[mock_tool])
@@ -39,7 +39,7 @@ class TestMCPManagerIntegration:
         mock_tool = MagicMock()
         mock_tool.name = "local_test_tool"
         mock_tool.description = "A local test tool"
-        mock_tool.inputSchema = {"type": "object"}
+        mock_tool.parameters = {"type": "object"}
 
         mock_server = MagicMock()
         mock_server.list_tools = AsyncMock(return_value=[mock_tool])

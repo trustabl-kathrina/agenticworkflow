@@ -10,11 +10,12 @@ This server exposes the agent as an HTTP API and handles:
 from __future__ import annotations
 
 import os
+import secrets
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -23,8 +24,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from agentic_workflow.agents.adk_agent import ADKAgent, AgentConfig  # type: ignore[attr-defined]
-from agentic_workflow.core.interfaces import Message, MessageRole
+from agentic_workflow.agents.adk_agent import ADKAgent
+from agentic_workflow.core.interfaces import AgentConfig, Message, MessageRole
 from agentic_workflow.core.registry import InMemoryToolRegistry
 from agentic_workflow.memory.firestore_memory import FirestoreMemory
 
@@ -49,31 +50,20 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
-# Application state (initialized in lifespan)
-_registry: InMemoryToolRegistry | None = None
-_memory: FirestoreMemory | None = None
-_agent: ADKAgent | None = None
-
 
 def get_registry() -> InMemoryToolRegistry:
     """Dependency: get the tool registry."""
-    if _registry is None:
-        raise HTTPException(status_code=503, detail="Registry not initialized")
-    return _registry
+    return cast(InMemoryToolRegistry, app.state.registry)
 
 
 def get_memory() -> FirestoreMemory:
     """Dependency: get the memory backend."""
-    if _memory is None:
-        raise HTTPException(status_code=503, detail="Memory not initialized")
-    return _memory
+    return cast(FirestoreMemory, app.state.memory)
 
 
 def get_agent() -> ADKAgent:
     """Dependency: get the agent."""
-    if _agent is None:
-        raise HTTPException(status_code=503, detail="Agent not initialized")
-    return _agent
+    return cast(ADKAgent, app.state.agent)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -110,16 +100,23 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         api_key = os.getenv("API_KEY")
         if not api_key:
-            return await call_next(request)
-
-        client_key = request.headers.get("X-API-Key")
-        if not client_key or client_key != api_key:
             logger.warning(
-                "unauthorized_request",
+                "auth_failed",
+                reason="API_KEY not configured",
                 path=request.url.path,
                 client_ip=request.client.host if request.client else "unknown",
             )
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+            raise HTTPException(status_code=401, detail="Authentication failed")
+
+        client_key = request.headers.get("X-API-Key")
+        if not client_key or not secrets.compare_digest(client_key, api_key):
+            logger.warning(
+                "auth_failed",
+                reason="invalid_api_key",
+                path=request.url.path,
+                client_ip=request.client.host if request.client else "unknown",
+            )
+            raise HTTPException(status_code=401, detail="Authentication failed")
 
         return await call_next(request)
 
@@ -138,14 +135,12 @@ def _safe_error_detail(original_error: Exception, public_message: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown."""
-    global _registry, _memory, _agent
-
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
     region = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west3")
 
-    _registry = InMemoryToolRegistry()
-    _memory = FirestoreMemory(project_id=project_id or "local-dev")
-    _agent = ADKAgent(
+    app.state.registry = InMemoryToolRegistry()
+    app.state.memory = FirestoreMemory(project_id=project_id or "local-dev")
+    app.state.agent = ADKAgent(
         config=AgentConfig(
             name="agentic-workflow",
             model=os.getenv("AGENT_MODEL", "gemini-2.5-flash"),
@@ -153,7 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             temperature=float(os.getenv("AGENT_TEMPERATURE", "0.7")),
             max_tokens=int(os.getenv("AGENT_MAX_TOKENS", "8192")),
         ),
-        registry=_registry,
+        registry=app.state.registry,
     )
 
     logger.info("Agentic Workflow server started", project=project_id, region=region)
@@ -162,13 +157,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         yield
     finally:
         logger.info("Agentic Workflow server shutting down")
-        if _agent:
-            try:
-                runner = _agent._runner if hasattr(_agent, "_runner") else None
-                if runner:
-                    await runner.close()
-            except Exception as e:
-                logger.warning(f"Error closing agent runner: {e}")
+        try:
+            await app.state.agent.close()
+        except Exception as e:
+            logger.warning(f"Error closing agent: {e}")
 
 
 app = FastAPI(
@@ -427,3 +419,9 @@ async def delete_session(
     """Delete a conversation session."""
     await mem.delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8080)), log_config=None)

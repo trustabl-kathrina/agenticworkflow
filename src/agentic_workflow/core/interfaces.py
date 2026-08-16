@@ -98,7 +98,7 @@ class IAgent(ABC):
         ...
 
     @abstractmethod
-    async def stream(
+    def stream(
         self,
         messages: Sequence[Message],
         config: AgentConfig | None = None,
@@ -114,6 +114,11 @@ class IAgent(ABC):
     @abstractmethod
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
+        ...
+
+    @abstractmethod
+    async def close(self) -> None:
+        """Release any resources held by the agent."""
         ...
 
 

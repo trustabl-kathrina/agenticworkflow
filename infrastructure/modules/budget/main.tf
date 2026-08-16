@@ -39,5 +39,6 @@ resource "google_billing_budget" "agent_budget" {
 
   all_updates_rule {
     disable_default_iam_recipients = false
+    monitoring_notification_channels = []
   }
 }

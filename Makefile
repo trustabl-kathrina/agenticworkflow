@@ -48,15 +48,19 @@ local-docker: ## Run server in Docker locally
 		agentic-workflow:latest
 
 tf-init: ## Initialize Terraform
+	python scripts/sync_terraform.py
 	cd $(INFRA_DIR)/environments/$(ENV) && terraform init
 
 tf-plan: ## Terraform plan
+	python scripts/sync_terraform.py
 	cd $(INFRA_DIR)/environments/$(ENV) && terraform plan -var-file=terraform.tfvars
 
 tf-apply: ## Terraform apply
+	python scripts/sync_terraform.py
 	cd $(INFRA_DIR)/environments/$(ENV) && terraform apply -var-file=terraform.tfvars -auto-approve
 
 tf-destroy: ## Terraform destroy (DANGEROUS)
+	python scripts/sync_terraform.py
 	cd $(INFRA_DIR)/environments/$(ENV) && terraform destroy -var-file=terraform.tfvars -auto-approve
 
 deploy: ## Deploy to Cloud Run via Cloud Build

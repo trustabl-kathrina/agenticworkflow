@@ -23,13 +23,15 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  region  = var.region
+  project               = var.project_id
+  region                = var.region
+  user_project_override = true
 }
 
 provider "google-beta" {
-  project = var.project_id
-  region  = var.region
+  project               = var.project_id
+  region                = var.region
+  user_project_override = true
 }
 
 variable "project_id" {
@@ -119,54 +121,63 @@ module "apis" {
 }
 
 module "artifact_registry" {
-  source     = "../../modules/artifact-registry"
-  project_id = var.project_id
-  region     = var.region
-  environment = var.environment
+  source       = "../../modules/artifact-registry"
+  project_id   = var.project_id
+  region       = var.region
+  environment  = var.environment
+  depends_on   = [module.apis]
 }
 
 module "iam" {
-  source      = "../../modules/iam"
-  project_id  = var.project_id
-  region      = var.region
-  environment = var.environment
+  source       = "../../modules/iam"
+  project_id   = var.project_id
+  region       = var.region
+  environment  = var.environment
+  depends_on   = [module.apis]
 }
 
 module "secret_manager" {
-  source      = "../../modules/secret-manager"
-  project_id  = var.project_id
-  region      = var.region
-  environment = var.environment
+  source       = "../../modules/secret-manager"
+  project_id   = var.project_id
+  region       = var.region
+  environment  = var.environment
+  depends_on   = [module.apis]
 }
 
 module "firestore" {
-  source      = "../../modules/firestore"
-  project_id  = var.project_id
-  region      = var.region
-  environment = var.environment
+  source       = "../../modules/firestore"
+  project_id   = var.project_id
+  region       = var.region
+  environment  = var.environment
+  apis_module  = module.apis
+  depends_on   = [module.apis]
 }
 
 module "cloud_run" {
-  source             = "../../modules/cloud-run"
-  project_id         = var.project_id
-  region             = var.region
-  environment        = var.environment
-  agent_service_name = var.agent_service_name
-  agent_image        = var.agent_image
-  agent_cpu          = var.agent_cpu
-  agent_memory       = var.agent_memory
-  min_instances      = var.min_instances
-  max_instances      = var.max_instances
-  allowed_ingress    = var.allowed_ingress
+  source                      = "../../modules/cloud-run"
+  project_id                  = var.project_id
+  region                      = var.region
+  environment                 = var.environment
+  agent_service_name          = var.agent_service_name
+  agent_image                 = var.agent_image
+  agent_cpu                   = var.agent_cpu
+  agent_memory                = var.agent_memory
+  min_instances               = var.min_instances
+  max_instances               = var.max_instances
+  allowed_ingress             = var.allowed_ingress
+  apis_module                 = module.apis
+  agent_service_account_email = module.iam.agent_sa_email
+  depends_on                  = [module.apis, module.iam]
 }
 
 module "load_balancer" {
-  source                 = "../../modules/load-balancer"
-  project_id             = var.project_id
-  region                 = var.region
-  environment            = var.environment
-  cloud_run_service_name = module.cloud_run.agent_service_name
-  domain                 = var.domain
+  source                  = "../../modules/load-balancer"
+  project_id              = var.project_id
+  region                  = var.region
+  environment             = var.environment
+  cloud_run_service_name  = module.cloud_run.agent_service_name
+  domain                  = var.domain
+  depends_on              = [module.apis, module.cloud_run]
 }
 
 module "budget" {
@@ -175,14 +186,18 @@ module "budget" {
   environment       = var.environment
   billing_account_id = var.billing_account_id
   budget_amount     = var.budget_amount
+  depends_on        = [module.apis]
 }
 
 module "monitoring" {
-  source          = "../../modules/monitoring"
-  project_id      = var.project_id
-  region          = var.region
-  environment     = var.environment
-  alert_email     = var.alert_email
+  source                  = "../../modules/monitoring"
+  project_id              = var.project_id
+  region                  = var.region
+  environment             = var.environment
+  alert_email             = var.alert_email
+  cloud_run_service_name  = module.cloud_run.agent_service_name
+  budget_id               = module.budget.budget_id
+  depends_on              = [module.apis, module.cloud_run, module.budget]
 }
 
 output "agent_url" {

@@ -13,3 +13,9 @@ variable "environment" {
   description = "Environment name"
   type        = string
 }
+
+variable "apis_module" {
+  description = "APIs module output for dependency management"
+  type        = any
+  default     = null
+}

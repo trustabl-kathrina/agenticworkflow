@@ -90,6 +90,9 @@ class MockAgent(IAgent):
     def list_tools(self) -> list[str]:
         return [t.name for t in self.tools]
 
+    async def close(self) -> None:
+        pass
+
 
 class TestInterfaces:
     """Test core data models."""
