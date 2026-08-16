@@ -4,7 +4,7 @@
 # Multi-stage build for minimal image size and fast cold starts on Cloud Run.
 # =============================================================================
 
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 WORKDIR /app
 
