@@ -1,15 +1,14 @@
 """Integration tests for framework-agnostic interface contracts."""
 from __future__ import annotations
 
-import pytest
+from typing import Any
+
 from agentic_workflow.core.interfaces import (
-    AgentConfig,
     AgentResponse,
     IAgent,
     IMemory,
     ITool,
 )
-from typing import Any
 
 
 class TestFrameworkSwap:

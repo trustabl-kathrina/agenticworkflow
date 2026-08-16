@@ -1,7 +1,6 @@
 """Integration tests for the health check endpoint."""
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 

@@ -1,9 +1,11 @@
 """Integration tests for MCP tool manager."""
 from __future__ import annotations
 
-import pytest
-from agentic_workflow.mcp.manager import MCPToolManager
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from agentic_workflow.mcp.manager import MCPToolManager
 
 
 class TestMCPManagerIntegration:
@@ -22,9 +24,9 @@ class TestMCPManagerIntegration:
         mock_client.list_tools = AsyncMock(return_value=[mock_tool])
         mock_client.call_tool = AsyncMock(return_value="tool result")
 
-        with patch("fastmcp.Client") as MockClient:
-            MockClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
-            MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("fastmcp.Client") as mock_fastmcp_client:
+            mock_fastmcp_client.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_fastmcp_client.return_value.__aexit__ = AsyncMock(return_value=False)
 
             tools = await manager.discover_remote("https://example.com/mcp")
             assert len(tools) == 1
@@ -42,8 +44,8 @@ class TestMCPManagerIntegration:
         mock_server = MagicMock()
         mock_server.list_tools = AsyncMock(return_value=[mock_tool])
 
-        with patch("fastmcp.FastMCP") as MockFastMCP:
-            MockFastMCP.return_value = mock_server
+        with patch("fastmcp.FastMCP") as mock_fastmcp:
+            mock_fastmcp.return_value = mock_server
 
             tools = await manager.discover_local("test_module")
             assert len(tools) == 1

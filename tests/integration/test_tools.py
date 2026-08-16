@@ -1,9 +1,9 @@
 """Integration tests for tool registration and invocation."""
 from __future__ import annotations
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi.testclient import TestClient
 
 
 class TestToolRegistration:
@@ -29,7 +29,9 @@ class TestToolRegistration:
 
     def test_register_tool_invalid_source(self, client: TestClient):
         with patch("agentic_workflow.api.server.registry") as mock_registry:
-            mock_registry.discover = MagicMock(side_effect=ValueError("Unsupported tool source format"))
+            mock_registry.discover = MagicMock(
+                side_effect=ValueError("Unsupported tool source format")
+            )
             response = client.post(
                 "/tools/register",
                 json={"source": "invalid-source"},
