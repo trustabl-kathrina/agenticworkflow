@@ -31,16 +31,12 @@ The `scripts/sync_terraform.py` script syncs these values to `terraform.tfvars` 
 
 #### 2. Enable Required APIs
 
-Some APIs must be enabled before Terraform can manage them:
-
 ```bash
 gcloud services enable cloudresourcemanager.googleapis.com \
   secretmanager.googleapis.com \
   compute.googleapis.com \
   --project=your-project-id
 ```
-
-**Why?** Terraform's `google_project_service` resource is eventually consistent. The provider may attempt to read/write other services before GCP has finished propagating the enablement, causing `SERVICE_DISABLED` errors.
 
 #### 3. Set Quota Project
 
@@ -50,52 +46,20 @@ The Budgets API requires a quota project when using local ADC:
 export GOOGLE_CLOUD_QUOTA_PROJECT=your-project-id
 ```
 
-Or set it in your shell profile. Terraform providers are configured with `user_project_override = true` to use this automatically.
-
-#### 4. Initialize Terraform
+#### 4. Deploy Infrastructure 
 
 ```bash
-make tf-init
-```
-
-This runs `scripts/sync_terraform.py` then `terraform init` with the GCS backend.
-
-**Note:** The GCS backend bucket must exist first:
-
-```bash
+# The GCS backend bucket must exist first
 gsutil mb gs://your-project-id-terraform-state || true
 gsutil versioning set on gs://your-project-id-terraform-state
-```
 
-#### 5. Plan Infrastructure
-
-```bash
+# Run Terraform commands to deploy
+make tf-init
 make tf-plan
-```
-
-#### 6. Apply Infrastructure
-
-```bash
 make tf-apply
-```
 
-This creates: APIs, Artifact Registry, IAM, Secret Manager, Firestore, Cloud Run, Load Balancer, Budget, and Monitoring.
-
-**Important:** Cloud Run will fail health checks until a valid Docker image is deployed.
-
-#### 7. Build and Push Docker Image
-
-```bash
+# Build and Publish Docker Image
 make deploy
-```
-
-Or manually:
-
-```bash
-gcloud builds submit \
-  --project your-project-id \
-  --region europe-west3 \
-  --tag europe-west3-docker.pkg.dev/your-project-id/prod-agentic-workflow/agent:latest
 ```
 
 #### 8. Provision API Key Secret
@@ -108,24 +72,7 @@ echo -n "your-secret-api-key" | gcloud secrets versions add api-key \
   --data-file=-
 ```
 
-#### 9. Verify Deployment
-
-```bash
-# Get load balancer URL
-terraform output load_balancer_url
-
-# Test health endpoint
-curl http://<LOAD_BALANCER_IP>/health
-
-# Test authenticated endpoint
-curl -H "X-API-Key: your-secret-api-key" http://<LOAD_BALANCER_IP>/health
-```
-
 ### Calling the Service
-
-All endpoints are served through the load balancer at `http://<LOAD_BALANCER_IP>`. Authenticated endpoints require the `X-API-Key` header.
-
-#### Prerequisites
 
 ```bash
 # Set the correct GCP project
@@ -136,67 +83,34 @@ export LB_IP=$(terraform output -raw load_balancer_url | sed 's|http://||')
 
 # Get the API key from Secret Manager
 export API_KEY=$(gcloud secrets versions access latest --secret=api-key --project=your-project-id)
-```
 
-#### Health Check
-
-```bash
+# Health Check
 curl http://$LB_IP/health
-```
+# {"status":"healthy"}
 
-Response:
-```json
-{"status":"healthy"}
-```
-
-#### Chat
-
-Send a message and receive a response:
-
-```bash
+# Send a message and receive a response.
 curl -X POST http://$LB_IP/chat \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
   -d '{"message": "Hello, how are you?"}'
-```
+# { "message": "Hello! How can I help you today?", "session_id": "default", "tool_calls": [], "finish_reason": "stop", "usage": {"prompt_tokens": 23, "completion_tokens": 9} }
 
-Response:
-```json
-{
-  "message": "Hello! How can I help you today?",
-  "session_id": "default",
-  "tool_calls": [],
-  "finish_reason": "stop",
-  "usage": {"prompt_tokens": 23, "completion_tokens": 9}
-}
-```
-
-#### Streaming Chat
-
-Stream responses in real time:
-
-```bash
+# Stream responses in real time
 curl -X POST http://$LB_IP/chat/stream \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
   -d '{"message": "Tell me a story"}'
-```
 
-#### List Tools
-
-```bash
+# Streaming chat
 curl http://$LB_IP/tools \
   -H "X-API-Key: $API_KEY"
-```
 
-Response:
-```json
-["tool_name_1", "tool_name_2"]
-```
+# List available tools
+curl http://$LB_IP/tools \
+  -H "X-API-Key: $API_KEY"
+# ["tool_name_1", "tool_name_2"]
 
-#### Register Tool
-
-```bash
+# Register a tool
 curl -X POST http://$LB_IP/tools/register \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
@@ -206,23 +120,14 @@ curl -X POST http://$LB_IP/tools/register \
     "parameters": {"type": "object", "properties": {...}},
     "function": "base64_encoded_python_function"
   }'
-```
 
-#### Invoke Tool
-
-```bash
+# Invoke a tool
 curl -X POST http://$LB_IP/tools/my_tool/invoke \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $API_KEY" \
   -d '{"arg1": "value1", "arg2": "value2"}'
-```
 
-#### Delete Session
-
-```bash
+# Delete session
 curl -X DELETE http://$LB_IP/sessions/default \
   -H "X-API-Key: $API_KEY"
 ```
-
-
-
