@@ -137,6 +137,7 @@ class ITool(ABC):
         """Human-readable description."""
         ...
 
+    @property
     @abstractmethod
     def schema(self) -> dict[str, Any]:
         """JSON Schema for the tool's parameters."""

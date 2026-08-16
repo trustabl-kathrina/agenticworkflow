@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from agentic_workflow.core.interfaces import ITool
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +21,7 @@ class MCPToolManager:
     In production, this would integrate with the official MCP SDK.
     """
 
-    async def discover_remote(self, url: str) -> list[Any]:
+    async def discover_remote(self, url: str) -> list[ITool]:
         """
         Discover tools from a remote MCP server via Streamable HTTP.
 
@@ -49,7 +51,7 @@ class MCPToolManager:
             logger.error(f"Failed to discover remote MCP tools from {url}: {e}")
             raise
 
-    async def discover_local(self, module_path: str) -> list[Any]:
+    async def discover_local(self, module_path: str) -> list[ITool]:
         """
         Discover tools from a local MCP server (stdio transport).
 
@@ -77,7 +79,7 @@ class MCPToolManager:
             logger.error(f"Failed to discover local MCP tools from {module_path}: {e}")
             raise
 
-    async def discover(self, source: str) -> list[Any]:
+    async def discover(self, source: str) -> list[ITool]:
         """
         Discover tools from an MCP server (auto-detect local vs remote).
 
@@ -92,7 +94,7 @@ class MCPToolManager:
         raise ValueError(f"Unsupported tool source format: {source}")
 
 
-class RemoteMCPTool:
+class RemoteMCPTool(ITool):
     """Wrapper for a remote MCP tool."""
 
     def __init__(
@@ -102,10 +104,18 @@ class RemoteMCPTool:
         input_schema: dict[str, Any],
         client: Any,
     ) -> None:
-        self.name = name
-        self.description = description
+        self._name = name
+        self._description = description
         self.input_schema = input_schema
         self._client = client
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return self._description
 
     @property
     def schema(self) -> dict[str, Any]:
@@ -116,7 +126,7 @@ class RemoteMCPTool:
         return str(result)
 
 
-class LocalMCPTool:
+class LocalMCPTool(ITool):
     """Wrapper for a local stdio MCP tool."""
 
     def __init__(
@@ -126,10 +136,18 @@ class LocalMCPTool:
         input_schema: dict[str, Any],
         server: Any,
     ) -> None:
-        self.name = name
-        self.description = description
+        self._name = name
+        self._description = description
         self.input_schema = input_schema
         self._server = server
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return self._description
 
     @property
     def schema(self) -> dict[str, Any]:
