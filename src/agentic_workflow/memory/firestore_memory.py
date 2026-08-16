@@ -14,10 +14,10 @@ from typing import Any
 from agentic_workflow.core.interfaces import IMemory, Message
 
 try:
-    from google.cloud.firestore import AsyncClient, SERVER_TIMESTAMP
+    from google.cloud.firestore import SERVER_TIMESTAMP, AsyncClient
 except ImportError:
-    AsyncClient = None  # type: ignore[misc,assignment]
-    SERVER_TIMESTAMP = None  # type: ignore[misc,assignment]
+    SERVER_TIMESTAMP = None  # type: ignore[assignment]
+    AsyncClient = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class FirestoreMemory(IMemory):
         self.database_id = database_id
         self.location = location
         self.session_ttl = session_ttl  # seconds
-        self._client = None
+        self._client: Any = None
 
     async def _get_client(self) -> Any:
         """Lazy Firestore client initialization."""

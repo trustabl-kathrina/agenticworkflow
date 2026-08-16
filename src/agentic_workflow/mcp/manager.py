@@ -40,7 +40,7 @@ class MCPToolManager:
                     RemoteMCPTool(
                         name=tool.name,
                         description=tool.description or "",
-                        input_schema=tool.inputSchema or {},
+                        input_schema=getattr(tool, "inputSchema", {}),
                         client=client,
                     )
                     for tool in tools
@@ -68,7 +68,7 @@ class MCPToolManager:
                 LocalMCPTool(
                     name=tool.name,
                     description=tool.description or "",
-                    input_schema=tool.inputSchema or {},
+                    input_schema=getattr(tool, "inputSchema", {}),
                     server=server,
                 )
                 for tool in tools
