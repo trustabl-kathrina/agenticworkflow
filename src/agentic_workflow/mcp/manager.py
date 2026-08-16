@@ -31,9 +31,9 @@ class MCPToolManager:
         """
         try:
             from fastmcp import Client
-            from fastmcp.client.transports import StreamableHTTPTransport
+            from fastmcp.client.transports import StreamableHttpTransport
 
-            transport = StreamableHTTPTransport(url=url)
+            transport = StreamableHttpTransport(url=url)
             async with Client(transport) as client:
                 tools = await client.list_tools()
                 return [
@@ -76,6 +76,20 @@ class MCPToolManager:
         except Exception as e:
             logger.error(f"Failed to discover local MCP tools from {module_path}: {e}")
             raise
+
+    async def discover(self, source: str) -> list[Any]:
+        """
+        Discover tools from an MCP server (auto-detect local vs remote).
+
+        Args:
+            source: MCP server URL (http/https) or local module path.
+
+        Returns:
+            List of discovered tools.
+        """
+        if source.startswith(("http://", "https://")):
+            return await self.discover_remote(source)
+        raise ValueError(f"Unsupported tool source format: {source}")
 
 
 class RemoteMCPTool:
