@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -49,10 +49,31 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
-# Global state (in production, use proper dependency injection)
-registry: InMemoryToolRegistry | None = None
-memory: FirestoreMemory | None = None
-agent: ADKAgent | None = None
+# Application state (initialized in lifespan)
+_registry: InMemoryToolRegistry | None = None
+_memory: FirestoreMemory | None = None
+_agent: ADKAgent | None = None
+
+
+def get_registry() -> InMemoryToolRegistry:
+    """Dependency: get the tool registry."""
+    if _registry is None:
+        raise HTTPException(status_code=503, detail="Registry not initialized")
+    return _registry
+
+
+def get_memory() -> FirestoreMemory:
+    """Dependency: get the memory backend."""
+    if _memory is None:
+        raise HTTPException(status_code=503, detail="Memory not initialized")
+    return _memory
+
+
+def get_agent() -> ADKAgent:
+    """Dependency: get the agent."""
+    if _agent is None:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    return _agent
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -103,17 +124,28 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+def _safe_error_detail(original_error: Exception, public_message: str) -> str:
+    """Log the full error server-side, return a safe message to the client."""
+    logger.error(
+        "internal_error",
+        error_type=type(original_error).__name__,
+        error_message=str(original_error),
+        exc_info=True,
+    )
+    return public_message
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown."""
-    global registry, memory, agent
+    global _registry, _memory, _agent
 
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
     region = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west3")
 
-    registry = InMemoryToolRegistry()
-    memory = FirestoreMemory(project_id=project_id or "local-dev")
-    agent = ADKAgent(
+    _registry = InMemoryToolRegistry()
+    _memory = FirestoreMemory(project_id=project_id or "local-dev")
+    _agent = ADKAgent(
         config=AgentConfig(
             name="agentic-workflow",
             model=os.getenv("AGENT_MODEL", "gemini-2.5-flash"),
@@ -121,12 +153,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             temperature=float(os.getenv("AGENT_TEMPERATURE", "0.7")),
             max_tokens=int(os.getenv("AGENT_MAX_TOKENS", "8192")),
         ),
-        registry=registry,
+        registry=_registry,
     )
 
     logger.info("Agentic Workflow server started", project=project_id, region=region)
-    yield
-    logger.info("Agentic Workflow server shutting down")
+
+    try:
+        yield
+    finally:
+        logger.info("Agentic Workflow server shutting down")
+        if _agent:
+            try:
+                runner = _agent._runner if hasattr(_agent, "_runner") else None
+                if runner:
+                    await runner.close()
+            except Exception as e:
+                logger.warning(f"Error closing agent runner: {e}")
 
 
 app = FastAPI(
@@ -139,7 +181,7 @@ app = FastAPI(
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -182,31 +224,34 @@ class HealthResponse(BaseModel):
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
+async def health(
+    reg: InMemoryToolRegistry = Depends(get_registry),
+) -> HealthResponse:
     """Health check endpoint."""
     return HealthResponse(
         status="healthy",
-        agent=agent.config.name if agent else "not initialized",
-        tools=registry.list_tools() if registry else [],
+        agent="agentic-workflow",
+        tools=reg.list_tools(),
     )
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    mem: FirestoreMemory = Depends(get_memory),
+    agt: ADKAgent = Depends(get_agent),
+) -> ChatResponse:
     """
     Main chat endpoint.
 
     Accepts a user message and returns the agent's response.
     Maintains conversation context via session_id.
     """
-    if not agent or not memory:
-        raise HTTPException(status_code=503, detail="Agent not initialized")
-
     session_id = request.session_id
     user_id = request.user_id
 
     # Load existing session history
-    history = await memory.get_session(session_id) or []
+    history = await mem.get_session(session_id) or []
 
     # Build message list
     messages = list(history)
@@ -220,18 +265,18 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # Configure agent for this request
     config = AgentConfig(
-        name=agent.config.name,
-        model=agent.config.model,
-        system_prompt=agent.config.system_prompt,
-        temperature=agent.config.temperature,
-        max_tokens=agent.config.max_tokens,
-        tools=request.tools or agent.config.tools,
+        name=agt.config.name,
+        model=agt.config.model,
+        system_prompt=agt.config.system_prompt,
+        temperature=agt.config.temperature,
+        max_tokens=agt.config.max_tokens,
+        tools=request.tools or agt.config.tools,
         metadata={"session_id": session_id, "user_id": user_id},
     )
 
     # Invoke agent
     start_time = time.time()
-    response = await agent.invoke(messages, config)
+    response = await agt.invoke(messages, config)
     latency_ms = (time.time() - start_time) * 1000
 
     logger.info(
@@ -253,7 +298,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             metadata={"tool_calls": response.tool_calls},
         )
     )
-    await memory.save_session(session_id, messages)
+    await mem.save_session(session_id, messages)
 
     if response.finish_reason == "error":
         logger.error(
@@ -273,14 +318,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 
 @app.post("/chat/stream")
-async def chat_stream(request: ChatRequest) -> StreamingResponse:
+async def chat_stream(
+    request: ChatRequest,
+    mem: FirestoreMemory = Depends(get_memory),
+    agt: ADKAgent = Depends(get_agent),
+) -> StreamingResponse:
     """Streaming chat endpoint for real-time responses."""
-    if not agent or not memory:
-        raise HTTPException(status_code=503, detail="Agent not initialized")
-
     session_id = request.session_id
     user_id = request.user_id
-    history = await memory.get_session(session_id) or []
+    history = await mem.get_session(session_id) or []
 
     messages = list(history)
     messages.append(
@@ -292,18 +338,18 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     )
 
     config = AgentConfig(
-        name=agent.config.name,
-        model=agent.config.model,
-        system_prompt=agent.config.system_prompt,
-        temperature=agent.config.temperature,
-        max_tokens=agent.config.max_tokens,
-        tools=request.tools or agent.config.tools,
+        name=agt.config.name,
+        model=agt.config.model,
+        system_prompt=agt.config.system_prompt,
+        temperature=agt.config.temperature,
+        max_tokens=agt.config.max_tokens,
+        tools=request.tools or agt.config.tools,
         metadata={"session_id": session_id, "user_id": user_id},
     )
 
     async def generate() -> AsyncGenerator[str, None]:
         full_response = ""
-        async for chunk in agent.stream(messages, config):
+        async for chunk in agt.stream(messages, config):
             full_response += chunk
             yield f"data: {chunk}\n\n"
 
@@ -314,22 +360,22 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 content=full_response,
             )
         )
-        await memory.save_session(session_id, messages)
+        await mem.save_session(session_id, messages)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/tools/register")
-async def register_tool(request: ToolRegistrationRequest) -> dict[str, Any]:
+async def register_tool(
+    request: ToolRegistrationRequest,
+    reg: InMemoryToolRegistry = Depends(get_registry),
+) -> dict[str, Any]:
     """Register a new MCP tool dynamically."""
-    if not registry:
-        raise HTTPException(status_code=503, detail="Registry not initialized")
-
     try:
-        tools = await registry.discover(request.source)
+        tools = await reg.discover(request.source)
         registered = []
         for tool in tools:
-            registry.register(tool)
+            reg.register(tool)
             registered.append(tool.name)
 
         return {
@@ -338,24 +384,28 @@ async def register_tool(request: ToolRegistrationRequest) -> dict[str, Any]:
             "count": len(registered),
         }
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=_safe_error_detail(e, "Invalid tool source or discovery failed"),
+        )
 
 
 @app.get("/tools", response_model=list[str])
-async def list_tools() -> list[str]:
+async def list_tools(
+    reg: InMemoryToolRegistry = Depends(get_registry),
+) -> list[str]:
     """List all registered tools."""
-    if not registry:
-        raise HTTPException(status_code=503, detail="Registry not initialized")
-    return registry.list_tools()
+    return reg.list_tools()
 
 
 @app.post("/tools/{tool_name}/invoke")
-async def invoke_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+async def invoke_tool(
+    tool_name: str,
+    arguments: dict[str, Any],
+    reg: InMemoryToolRegistry = Depends(get_registry),
+) -> dict[str, Any]:
     """Invoke a tool directly."""
-    if not registry:
-        raise HTTPException(status_code=503, detail="Registry not initialized")
-
-    tool = registry.get(tool_name)
+    tool = reg.get(tool_name)
     if not tool:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
 
@@ -363,14 +413,17 @@ async def invoke_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, An
         result = await tool.execute(arguments)
         return {"tool": tool_name, "result": result, "status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=_safe_error_detail(e, "Tool execution failed"),
+        )
 
 
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> dict[str, str]:
+async def delete_session(
+    session_id: str,
+    mem: FirestoreMemory = Depends(get_memory),
+) -> dict[str, str]:
     """Delete a conversation session."""
-    if not memory:
-        raise HTTPException(status_code=503, detail="Memory not initialized")
-
-    await memory.delete_session(session_id)
+    await mem.delete_session(session_id)
     return {"status": "deleted", "session_id": session_id}
