@@ -259,7 +259,7 @@ opentelemetry-api==1.43.0
     #   google-cloud-logging
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-sdk==1.43.0
+opentelemetry-sdk==1.44.0
     # via
     #   agentic-workflow
     #   google-adk
