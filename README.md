@@ -2,8 +2,6 @@
 
 Extensible AI agent platform on Google Cloud. Framework-agnostic core with pluggable tools, memory, and hard budget caps.
 
-## Getting Started
-
 ### Prerequisites
 
 - Python 3.12+, `uv`
@@ -15,7 +13,7 @@ Extensible AI agent platform on Google Cloud. Framework-agnostic core with plugg
 
 ### Production Deployment
 
-#### 1. Configure Environment
+#### Configure Environment and Project Settings
 
 Edit `.env` with your GCP project and billing details:
 
@@ -29,7 +27,7 @@ API_KEY=your-secret-api-key
 
 The `scripts/sync_terraform.py` script syncs these values to `terraform.tfvars` automatically.
 
-#### 2. Enable Required APIs
+Afterwards, enable required APIs.
 
 ```bash
 gcloud services enable cloudresourcemanager.googleapis.com \
@@ -38,15 +36,13 @@ gcloud services enable cloudresourcemanager.googleapis.com \
   --project=your-project-id
 ```
 
-#### 3. Set Quota Project
-
 The Budgets API requires a quota project when using local ADC:
 
 ```bash
 export GOOGLE_CLOUD_QUOTA_PROJECT=your-project-id
 ```
 
-#### 4. Deploy Infrastructure 
+#### Deploy Infrastructure 
 
 ```bash
 # The GCS backend bucket must exist first
@@ -62,9 +58,7 @@ make tf-apply
 make deploy
 ```
 
-#### 8. Provision API Key Secret
-
-Terraform creates the `api-key` secret, but you must add the value:
+The last step is to provision API key secret. Terraform creates the `api-key` secret, but you must add the value:
 
 ```bash
 echo -n "your-secret-api-key" | gcloud secrets versions add api-key \
@@ -74,6 +68,7 @@ echo -n "your-secret-api-key" | gcloud secrets versions add api-key \
 
 ### Calling the Service
 
+Set permissions to access the API.
 ```bash
 # Set the correct GCP project
 gcloud config set project your-project-id
@@ -83,7 +78,10 @@ export LB_IP=$(terraform output -raw load_balancer_url | sed 's|http://||')
 
 # Get the API key from Secret Manager
 export API_KEY=$(gcloud secrets versions access latest --secret=api-key --project=your-project-id)
+```
 
+Using the following cheat sheet, you can start communicating with your agent.
+```
 # Health Check
 curl http://$LB_IP/health
 # {"status":"healthy"}
