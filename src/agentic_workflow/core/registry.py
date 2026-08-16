@@ -29,7 +29,7 @@ class InMemoryToolRegistry(IToolRegistry):
         """Get a tool by name."""
         return self._tools.get(name)
 
-    def list(self) -> list[str]:
+    def list_tools(self) -> list[str]:
         """List all registered tool names."""
         return list(self._tools.keys())
 

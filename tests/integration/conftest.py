@@ -1,15 +1,13 @@
 """Shared fixtures for integration tests."""
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agentic_workflow.agents.adk_agent import AgentConfig
-from agentic_workflow.core.interfaces import AgentResponse, MessageRole
+from agentic_workflow.core.interfaces import AgentResponse
 
 
 @pytest.fixture(scope="session")
@@ -46,7 +44,7 @@ def mock_memory() -> MagicMock:
 @pytest.fixture(scope="session")
 def mock_registry() -> MagicMock:
     mock = MagicMock()
-    mock.list.return_value = ["mock_tool"]
+    mock.list_tools.return_value = ["mock_tool"]
     mock.get.return_value = MagicMock()
     mock.discover = AsyncMock(return_value=[])
     mock.register = MagicMock()

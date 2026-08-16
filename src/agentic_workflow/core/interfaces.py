@@ -205,7 +205,7 @@ class IToolRegistry(ABC):
         ...
 
     @abstractmethod
-    def list(self) -> list[str]:
+    def list_tools(self) -> list[str]:
         """List all registered tool names."""
         ...
 

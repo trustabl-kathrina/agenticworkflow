@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from agentic_workflow.agents.adk_agent import ADKAgent, AgentConfig
+from agentic_workflow.agents.adk_agent import ADKAgent, AgentConfig  # type: ignore[attr-defined]
 from agentic_workflow.core.interfaces import Message, MessageRole
 from agentic_workflow.core.registry import InMemoryToolRegistry
 from agentic_workflow.memory.firestore_memory import FirestoreMemory
@@ -164,7 +164,7 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="healthy",
         agent=agent.config.name if agent else "not initialized",
-        tools=registry.list() if registry else [],
+        tools=registry.list_tools() if registry else [],
     )
 
 
@@ -243,7 +243,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     return ChatResponse(
         message=response.message,
         session_id=session_id,
-        tool_calls=response.tool_calls,
+        tool_calls=[tc.__dict__ for tc in response.tool_calls],
         finish_reason=response.finish_reason,
         usage=response.usage,
     )
@@ -323,7 +323,7 @@ async def list_tools() -> list[str]:
     """List all registered tools."""
     if not registry:
         raise HTTPException(status_code=503, detail="Registry not initialized")
-    return registry.list()
+    return registry.list_tools()
 
 
 @app.post("/tools/{tool_name}/invoke")
