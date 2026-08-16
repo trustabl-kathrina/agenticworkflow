@@ -16,5 +16,5 @@ variable "billing_account_id" {
 variable "budget_amount" {
   description = "Monthly budget cap"
   type        = number
-  default     = 50
+  default     = 10
 }

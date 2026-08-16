@@ -87,7 +87,7 @@ variable "max_instances" {
 variable "budget_amount" {
   description = "Monthly budget cap in EUR"
   type        = number
-  default     = 50
+  default     = 10
 }
 
 variable "allowed_ingress" {
