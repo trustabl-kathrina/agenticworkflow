@@ -9,6 +9,11 @@ variable "region" {
   default     = "europe-west3"
 }
 
+variable "cloud_run_service_name" {
+  description = "Cloud Run service name to route traffic to"
+  type        = string
+}
+
 variable "environment" {
   description = "Environment name"
   type        = string

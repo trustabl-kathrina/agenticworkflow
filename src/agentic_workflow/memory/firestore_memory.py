@@ -33,7 +33,7 @@ class FirestoreMemory(IMemory):
         self,
         project_id: str,
         database_id: str = "(default)",
-        location: str = "us-central1",
+        location: str = "europe-west3",
         session_ttl: int | None = None,
     ) -> None:
         self.project_id = project_id

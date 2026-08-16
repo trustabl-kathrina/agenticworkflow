@@ -7,7 +7,7 @@ PROJECT_DIR := $(shell pwd)
 SRC_DIR := $(PROJECT_DIR)/src
 INFRA_DIR := $(PROJECT_DIR)/infrastructure
 ENV := prod
-REGION := us-central1
+REGION := europe-west3
 PROJECT_ID := $(shell gcloud config get-value project 2>/dev/null || echo "your-project-id")
 
 help: ## Show this help
