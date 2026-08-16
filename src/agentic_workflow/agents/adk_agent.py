@@ -7,6 +7,7 @@ implementation of IAgent without changing any application code.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, Sequence
 from typing import Any
@@ -31,6 +32,8 @@ class ADKAgent(IAgent):
     This class wraps ADK's Agent to conform to the IAgent interface.
     All ADK-specific details are contained here.
     """
+
+    INVOKE_TIMEOUT_SECONDS = 60
 
     def __init__(
         self,
@@ -125,12 +128,13 @@ class ADKAgent(IAgent):
             )
 
             events = []
-            async for event in self._runner.run_async(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=content,
-            ):
-                events.append(event)
+            async with asyncio.timeout(ADKAgent.INVOKE_TIMEOUT_SECONDS):
+                async for event in self._runner.run_async(
+                    user_id=user_id,
+                    session_id=session_id,
+                    new_message=content,
+                ):
+                    events.append(event)
 
             response_text = ""
             tool_calls = []
@@ -181,8 +185,42 @@ class ADKAgent(IAgent):
         config: AgentConfig | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream responses for real-time interaction."""
-        response = await self.invoke(messages, config)
-        yield response.message
+        await self._ensure_initialized()
+
+        effective_config = config or self.config
+        session_id = effective_config.metadata.get("session_id", "default")
+        user_id = effective_config.metadata.get("user_id", "user")
+
+        last_message = messages[-1] if messages else None
+        if not last_message:
+            yield "No input provided."
+            return
+
+        try:
+            from google.genai import types
+
+            content = types.Content(
+                role=last_message.role.value,
+                parts=[types.Part(text=last_message.content)],
+            )
+
+            async with asyncio.timeout(ADKAgent.INVOKE_TIMEOUT_SECONDS):
+                async for event in self._runner.run_async(
+                    user_id=user_id,
+                    session_id=session_id,
+                    new_message=content,
+                ):
+                    if hasattr(event, "content") and event.content:
+                        for part in event.content.parts:
+                            if hasattr(part, "text") and part.text:
+                                yield part.text
+
+        except TimeoutError:
+            logger.error("Agent stream timed out")
+            yield "Error: Response timed out"
+        except Exception as e:
+            logger.error(f"Agent stream failed: {e}", exc_info=True)
+            yield f"Error: {e!s}"
 
     def register_tool(self, tool: ITool) -> None:
         """Register a tool with the agent."""
