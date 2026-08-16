@@ -288,7 +288,7 @@ proto-plus==1.28.3
     #   google-cloud-logging
     #   google-cloud-resource-manager
     #   google-cloud-secret-manager
-protobuf==6.33.6
+protobuf==7.35.1
     # via
     #   google-api-core
     #   google-cloud-aiplatform
