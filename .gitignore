@@ -1,0 +1,37 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+.venv
+.env
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+dist
+build
+*.egg
+
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform
+terraform.tfvars
+*.tfplan
+crash.log
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+service-account*.json
+credentials*.json
