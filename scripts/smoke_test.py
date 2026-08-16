@@ -81,7 +81,7 @@ def test_tool_registry():
     registry = InMemoryToolRegistry()
 
     # Test empty registry
-    assert registry.list() == []
+    assert registry.list_tools() == []
     assert registry.get("nonexistent") is None
 
     # Test registration
@@ -102,7 +102,7 @@ def test_tool_registry():
 
     tool = DummyTool()
     registry.register(tool)
-    assert "dummy" in registry.list()
+    assert "dummy" in registry.list_tools()
     assert registry.get("dummy") is tool
     print("✓ Tool registry works")
 
