@@ -18,5 +18,5 @@ class TestHealthEndpoint:
         data = response.json()
         assert "agent" in data
         assert "tools" in data
-        assert data["agent"] == "test-agent"
+        assert data["agent"] == "agentic-workflow"
         assert data["tools"] == ["mock_tool"]

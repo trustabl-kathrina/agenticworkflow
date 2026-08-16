@@ -80,8 +80,8 @@ def app() -> FastAPI:
 @pytest.fixture
 def client(app: FastAPI, mock_agent, mock_memory, mock_registry) -> TestClient:
     """Create TestClient with module globals patched."""
-    with patch("agentic_workflow.api.server.agent", mock_agent), \
-         patch("agentic_workflow.api.server.memory", mock_memory), \
-         patch("agentic_workflow.api.server.registry", mock_registry):
+    with patch("agentic_workflow.api.server._agent", mock_agent), \
+         patch("agentic_workflow.api.server._memory", mock_memory), \
+         patch("agentic_workflow.api.server._registry", mock_registry):
         with TestClient(app) as test_client:
             yield test_client

@@ -15,7 +15,7 @@ class TestToolRegistration:
         assert isinstance(response.json(), list)
 
     def test_register_tool_from_source(self, client: TestClient):
-        with patch("agentic_workflow.api.server.registry") as mock_registry:
+        with patch("agentic_workflow.api.server._registry") as mock_registry:
             mock_registry.discover = AsyncMock(
                 return_value=[MagicMock(name="test_tool")]
             )
@@ -28,7 +28,7 @@ class TestToolRegistration:
             assert data["status"] == "success"
 
     def test_register_tool_invalid_source(self, client: TestClient):
-        with patch("agentic_workflow.api.server.registry") as mock_registry:
+        with patch("agentic_workflow.api.server._registry") as mock_registry:
             mock_registry.discover = MagicMock(
                 side_effect=ValueError("Unsupported tool source format")
             )
