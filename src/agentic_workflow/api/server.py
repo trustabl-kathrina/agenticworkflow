@@ -80,13 +80,39 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Middleware to enforce API key authentication."""
+
+    def __init__(self, app: Any, api_key: str | None = None) -> None:
+        super().__init__(app)
+        self.api_key = api_key
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        if request.url.path == "/health":
+            return await call_next(request)
+
+        if not self.api_key:
+            return await call_next(request)
+
+        client_key = request.headers.get("X-API-Key")
+        if not client_key or client_key != self.api_key:
+            logger.warning(
+                "unauthorized_request",
+                path=request.url.path,
+                client_ip=request.client.host if request.client else "unknown",
+            )
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+        return await call_next(request)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown."""
     global registry, memory, agent
 
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
-    region = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    region = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west3")
 
     registry = InMemoryToolRegistry()
     memory = FirestoreMemory(project_id=project_id or "local-dev")
