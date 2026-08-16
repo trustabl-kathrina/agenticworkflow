@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifest first for layer caching
-COPY pyproject.toml uv.lock requirements.txt .
+COPY pyproject.toml uv.lock requirements.txt README.md .
 
 # Install Python dependencies from pinned lockfile
 RUN pip install --no-cache-dir -r requirements.txt
