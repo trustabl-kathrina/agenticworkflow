@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from agentic_workflow.agents.adk_agent import ADKAgent, AgentConfig
 from agentic_workflow.core.interfaces import Message, MessageRole
@@ -54,10 +55,10 @@ memory: FirestoreMemory | None = None
 agent: ADKAgent | None = None
 
 
-class RequestIDMiddleware:
+class RequestIDMiddleware(BaseHTTPMiddleware):
     """Middleware to add request ID and timing to each request."""
 
-    async def __call__(self, request: Request, call_next: Any) -> Any:
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
         request_id = str(uuid.uuid4())
         start_time = time.time()
 
