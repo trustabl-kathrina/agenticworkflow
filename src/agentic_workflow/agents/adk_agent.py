@@ -17,6 +17,7 @@ from agentic_workflow.core.interfaces import (
     IAgent,
     ITool,
     Message,
+    ToolCall,
 )
 from agentic_workflow.core.registry import InMemoryToolRegistry
 
@@ -85,12 +86,12 @@ class ADKAgent(IAgent):
     def _wrap_tool(self, tool: ITool) -> Any:
         """Convert an ITool to an ADK-compatible tool."""
         try:
-            from google.adk.tools import FunctionTool
+            from google.adk.tools import FunctionTool  # type: ignore[attr-defined]
 
             async def _adk_tool_func(**kwargs: Any) -> str:
                 return await tool.execute(kwargs)
 
-            return FunctionTool(
+            return FunctionTool(  # type: ignore[call-arg]
                 func=_adk_tool_func,
                 name=tool.name,
                 description=tool.description,
@@ -144,11 +145,11 @@ class ADKAgent(IAgent):
                 if hasattr(event, "tool_calls"):
                     for tc in event.tool_calls:
                         tool_calls.append(
-                            {
-                                "id": getattr(tc, "id", ""),
-                                "name": getattr(tc, "name", ""),
-                                "arguments": getattr(tc, "args", {}),
-                            }
+                            ToolCall(
+                                id=getattr(tc, "id", ""),
+                                name=getattr(tc, "name", ""),
+                                arguments=getattr(tc, "args", {}),
+                            )
                         )
 
                 if hasattr(event, "usage_metadata"):
@@ -174,7 +175,7 @@ class ADKAgent(IAgent):
                 finish_reason="error",
             )
 
-    async def stream(
+    async def stream(  # type: ignore[override]
         self,
         messages: Sequence[Message],
         config: AgentConfig | None = None,
@@ -189,4 +190,4 @@ class ADKAgent(IAgent):
 
     def list_tools(self) -> list[str]:
         """List all registered tool names."""
-        return self._registry.list()
+        return self._registry.list_tools()
