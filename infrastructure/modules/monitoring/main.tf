@@ -1,3 +1,13 @@
+resource "google_monitoring_notification_channel" "email" {
+  count      = var.alert_email != "" ? 1 : 0
+  project    = var.project_id
+  display_name = "${var.environment} - Alert Email"
+  type       = "email"
+  labels = {
+    email_address = var.alert_email
+  }
+}
+
 resource "google_monitoring_alert_policy" "agent_errors" {
   project      = var.project_id
   display_name = "${var.environment} - Agent Error Rate"
@@ -18,7 +28,7 @@ resource "google_monitoring_alert_policy" "agent_errors" {
     }
   }
 
-  notification_channels = []
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
 }
 
 resource "google_monitoring_alert_policy" "agent_latency" {
@@ -41,7 +51,7 @@ resource "google_monitoring_alert_policy" "agent_latency" {
     }
   }
 
-  notification_channels = []
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
 }
 
 resource "google_monitoring_alert_policy" "budget_burn_rate" {
@@ -64,7 +74,7 @@ resource "google_monitoring_alert_policy" "budget_burn_rate" {
     }
   }
 
-  notification_channels = []
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
 }
 
 resource "google_monitoring_alert_policy" "agent_cold_starts" {
@@ -87,7 +97,7 @@ resource "google_monitoring_alert_policy" "agent_cold_starts" {
     }
   }
 
-  notification_channels = []
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
 }
 
 resource "google_monitoring_alert_policy" "agent_instance_count" {
@@ -110,5 +120,5 @@ resource "google_monitoring_alert_policy" "agent_instance_count" {
     }
   }
 
-  notification_channels = []
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
 }
