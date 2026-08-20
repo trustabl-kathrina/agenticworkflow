@@ -1,11 +1,13 @@
 """Shared fixtures for integration tests."""
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from agentic_workflow.core.interfaces import AgentResponse
 
@@ -51,10 +53,19 @@ def mock_registry() -> MagicMock:
     return mock
 
 
+class _FakeAPIMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        request.state.device_id = "test-device"
+        return await call_next(request)
+
+
 @pytest.fixture
 def app() -> FastAPI:
     """Create a test FastAPI app with routes copied from the main app."""
+    os.environ.setdefault("API_KEY", "test-master-key")
+
     test_app = FastAPI()
+    test_app.add_middleware(_FakeAPIMiddleware)
 
     from agentic_workflow.api.server import (
         chat,

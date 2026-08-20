@@ -80,6 +80,8 @@ export LB_IP=$(terraform output -raw load_balancer_url | sed 's|http://||')
 export API_KEY=$(gcloud secrets versions access latest --secret=api-key --project=your-project-id)
 ```
 
+The `api-key` secret stores a JSON object with a `master_key` and `devices` array. Use the master key for admin / infrastructure access, or issue per-device keys for MCUs.
+
 Using the following cheat sheet, you can start communicating with your agent.
 ```
 # Health Check
@@ -129,3 +131,42 @@ curl -X POST http://$LB_IP/tools/my_tool/invoke \
 curl -X DELETE http://$LB_IP/sessions/default \
   -H "X-API-Key: $API_KEY"
 ```
+
+### Per-Device API Keys
+
+Issue short-lived, per-device credentials for MCUs or edge clients. Device keys are stored in the same `api-key` Secret Manager secret as the master key.
+
+#### Create a new device key
+
+```bash
+python3 scripts/create_device_key.py --device-id mcu-001 --hours 24
+```
+
+The command prints a device-specific key and expiry time. The script preserves the existing master key and appends the new device to the secret's JSON payload.
+
+#### Secret format
+
+```json
+{
+  "master_key": "...",
+  "devices": [
+    {
+      "id": "mcu-001",
+      "key": "...",
+      "created_at": "...",
+      "expires_at": "..."
+    }
+  ]
+}
+```
+
+#### Use a device key
+
+```bash
+curl -X POST http://$LB_IP/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: <device-key>" \
+  -d '{"message": "Hello from MCU"}'
+```
+
+Successful requests return `X-Auth-Device-ID: mcu-001` in the response headers. Expired device keys return `401 Authentication failed`.

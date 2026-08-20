@@ -11,6 +11,7 @@ class TestChatFlow:
         response = client.post(
             "/chat",
             json={"message": "Hello, agent!"},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -21,19 +22,25 @@ class TestChatFlow:
         response = client.post(
             "/chat",
             json={"message": "First message", "session_id": "test-session-123"},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 200
         data = response.json()
         assert data["session_id"] == "test-session-123"
 
     def test_chat_empty_message_fails(self, client: TestClient):
-        response = client.post("/chat", json={"message": ""})
+        response = client.post(
+            "/chat",
+            json={"message": ""},
+            headers={"X-API-Key": "test-master-key"},
+        )
         assert response.status_code == 422
 
     def test_chat_with_tools_filter(self, client: TestClient):
         response = client.post(
             "/chat",
             json={"message": "Use tools", "tools": ["tool1", "tool2"]},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 200
 
@@ -41,6 +48,7 @@ class TestChatFlow:
         response = client.post(
             "/chat/stream",
             json={"message": "Stream this"},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"

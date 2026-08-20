@@ -13,10 +13,8 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "healthy"
 
-    def test_health_contains_agent_info(self, client: TestClient):
+    def test_health_does_not_expose_internal_details(self, client: TestClient):
         response = client.get("/health")
         data = response.json()
-        assert "agent" in data
-        assert "tools" in data
-        assert data["agent"] == "agentic-workflow"
-        assert data["tools"] == ["mock_tool"]
+        assert "agent" not in data
+        assert "tools" not in data

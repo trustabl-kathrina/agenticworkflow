@@ -10,7 +10,10 @@ class TestToolRegistration:
     """Test dynamic tool discovery and registration."""
 
     def test_list_tools_returns_empty_initially(self, client: TestClient):
-        response = client.get("/tools")
+        response = client.get(
+            "/tools",
+            headers={"X-API-Key": "test-master-key"},
+        )
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
@@ -21,6 +24,7 @@ class TestToolRegistration:
         response = client.post(
             "/tools/register",
             json={"source": "https://example.com/mcp"},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -33,5 +37,6 @@ class TestToolRegistration:
         response = client.post(
             "/tools/register",
             json={"source": "invalid-source"},
+            headers={"X-API-Key": "test-master-key"},
         )
         assert response.status_code == 400

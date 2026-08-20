@@ -9,12 +9,14 @@ This server exposes the agent as an HTTP API and handles:
 """
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, cast
 
 import structlog
@@ -94,12 +96,45 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 class APIKeyMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce API key authentication."""
 
-    async def dispatch(self, request: Request, call_next: Any) -> Any:
+    def _parse_api_key_config(self, raw: str) -> dict:
+        if not raw or not raw.strip():
+            return {}
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return data
+        except json.JSONDecodeError:
+            pass
+        return {"master_key": raw, "devices": []}
+
+    def _is_device_key_valid(self, device: dict) -> bool:
+        expires_at = device.get("expires_at")
+        if not expires_at:
+            return False
+        try:
+            expires_dt = datetime.fromisoformat(expires_at)
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) < expires_dt
+        except (ValueError, TypeError):
+            return False
+
+    def _authenticate(self, request: Request) -> str:
         if request.url.path == "/health":
-            return await call_next(request)
+            return "health"
 
         api_key = os.getenv("API_KEY")
-        if not api_key:
+        if not api_key or not api_key.strip():
+            logger.warning(
+                "auth_failed",
+                reason="API_KEY not configured",
+                path=request.url.path,
+                client_ip=request.client.host if request.client else "unknown",
+            )
+            raise HTTPException(status_code=401, detail="Authentication failed")
+
+        config = self._parse_api_key_config(api_key)
+        if not config:
             logger.warning(
                 "auth_failed",
                 reason="API_KEY not configured",
@@ -109,16 +144,39 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             raise HTTPException(status_code=401, detail="Authentication failed")
 
         client_key = request.headers.get("X-API-Key")
-        if not client_key or not secrets.compare_digest(client_key, api_key):
+        if not client_key:
             logger.warning(
                 "auth_failed",
-                reason="invalid_api_key",
+                reason="missing_api_key",
                 path=request.url.path,
                 client_ip=request.client.host if request.client else "unknown",
             )
             raise HTTPException(status_code=401, detail="Authentication failed")
 
-        return await call_next(request)
+        master_key = config.get("master_key")
+        if master_key and secrets.compare_digest(client_key, master_key):
+            request.state.device_id = "master"
+            return "master"
+
+        for device in config.get("devices", []):
+            if secrets.compare_digest(client_key, device.get("key", "")) and self._is_device_key_valid(device):
+                request.state.device_id = device.get("id", "unknown")
+                return device.get("id", "unknown")
+
+        logger.warning(
+            "auth_failed",
+            reason="invalid_api_key",
+            path=request.url.path,
+            client_ip=request.client.host if request.client else "unknown",
+        )
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        auth_result = self._authenticate(request)
+        response = await call_next(request)
+        if auth_result != "health":
+            response.headers["X-Auth-Device-ID"] = auth_result
+        return response
 
 
 def _safe_error_detail(original_error: Exception, public_message: str) -> str:
@@ -132,11 +190,30 @@ def _safe_error_detail(original_error: Exception, public_message: str) -> str:
     return public_message
 
 
+def _get_device_id(request: Request) -> str:
+    """Get device ID from request state, set by APIKeyMiddleware."""
+    device_id = getattr(request.state, "device_id", None)
+    if not device_id:
+        raise HTTPException(status_code=401, detail="Authentication failed")
+    return device_id
+
+
+def _namespace_session(session_id: str, device_id: str) -> str:
+    """Namespace session ID by device to enforce ownership."""
+    if device_id == "master":
+        return session_id
+    return f"{device_id}:{session_id}"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan: startup and shutdown."""
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
     region = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west3")
+
+    api_key = os.getenv("API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("API_KEY environment variable must be set and non-empty")
 
     app.state.registry = InMemoryToolRegistry()
     app.state.memory = FirestoreMemory(project_id=project_id or "local-dev")
@@ -175,8 +252,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
 
 
@@ -211,25 +288,18 @@ class HealthResponse(BaseModel):
     """Health check response."""
 
     status: str
-    agent: str
-    tools: list[str]
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health(
-    reg: InMemoryToolRegistry = Depends(get_registry),
-) -> HealthResponse:
+async def health() -> HealthResponse:
     """Health check endpoint."""
-    return HealthResponse(
-        status="healthy",
-        agent="agentic-workflow",
-        tools=reg.list_tools(),
-    )
+    return HealthResponse(status="healthy")
 
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     mem: FirestoreMemory = Depends(get_memory),
     agt: ADKAgent = Depends(get_agent),
 ) -> ChatResponse:
@@ -239,8 +309,9 @@ async def chat(
     Accepts a user message and returns the agent's response.
     Maintains conversation context via session_id.
     """
-    session_id = request.session_id
-    user_id = request.user_id
+    device_id = _get_device_id(request)
+    session_id = _namespace_session(body.session_id, device_id)
+    user_id = body.user_id
 
     # Load existing session history
     history = await mem.get_session(session_id) or []
@@ -250,7 +321,7 @@ async def chat(
     messages.append(
         Message(
             role=MessageRole.USER,
-            content=request.message,
+            content=body.message,
             metadata={"user_id": user_id},
         )
     )
@@ -262,7 +333,7 @@ async def chat(
         system_prompt=agt.config.system_prompt,
         temperature=agt.config.temperature,
         max_tokens=agt.config.max_tokens,
-        tools=request.tools or agt.config.tools,
+        tools=body.tools or agt.config.tools,
         metadata={"session_id": session_id, "user_id": user_id},
     )
 
@@ -302,7 +373,7 @@ async def chat(
 
     return ChatResponse(
         message=response.message,
-        session_id=session_id,
+        session_id=body.session_id,
         tool_calls=[tc.__dict__ for tc in response.tool_calls],
         finish_reason=response.finish_reason,
         usage=response.usage,
@@ -311,20 +382,22 @@ async def chat(
 
 @app.post("/chat/stream")
 async def chat_stream(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     mem: FirestoreMemory = Depends(get_memory),
     agt: ADKAgent = Depends(get_agent),
 ) -> StreamingResponse:
     """Streaming chat endpoint for real-time responses."""
-    session_id = request.session_id
-    user_id = request.user_id
+    device_id = _get_device_id(request)
+    session_id = _namespace_session(body.session_id, device_id)
+    user_id = body.user_id
     history = await mem.get_session(session_id) or []
 
     messages = list(history)
     messages.append(
         Message(
             role=MessageRole.USER,
-            content=request.message,
+            content=body.message,
             metadata={"user_id": user_id},
         )
     )
@@ -335,7 +408,7 @@ async def chat_stream(
         system_prompt=agt.config.system_prompt,
         temperature=agt.config.temperature,
         max_tokens=agt.config.max_tokens,
-        tools=request.tools or agt.config.tools,
+        tools=body.tools or agt.config.tools,
         metadata={"session_id": session_id, "user_id": user_id},
     )
 
@@ -413,11 +486,14 @@ async def invoke_tool(
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(
+    request: Request,
     session_id: str,
     mem: FirestoreMemory = Depends(get_memory),
 ) -> dict[str, str]:
     """Delete a conversation session."""
-    await mem.delete_session(session_id)
+    device_id = _get_device_id(request)
+    namespaced_id = _namespace_session(session_id, device_id)
+    await mem.delete_session(namespaced_id)
     return {"status": "deleted", "session_id": session_id}
 
 
